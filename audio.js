@@ -22,9 +22,9 @@ let collapsing = false;
 let firstDegradeHit = false;
 
 // Mix / loudness tuning
-const BASE_MASTER = 0.78;     // overall level
-const MIN_MASTER = 0.48;      // lowest level after compensation
-const DIST_COMP_DB = 16;      // trim at max distortion
+const BASE_MASTER = 0.70;     // overall level
+const MIN_MASTER = 0.38;      // lowest level after compensation
+const DIST_COMP_DB = 24;      // trim at max distortion
 
 // First-hit duck to prevent the initial loudness jump
 const FIRST_HIT_DUCK_DB = 7.0;
