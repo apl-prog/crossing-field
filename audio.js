@@ -97,13 +97,10 @@ function degradeAudio(){
     );
 
     // Apply distortion shortly after dip begins
-    setTimeout(() => {
-  if (!distortion) return;
-
-  // Slightly gentler on death 1 so it doesn’t jump loud
-  const distAmount = degradation * 45; // was *60
+  setTimeout(() => {
+  const distAmount = degradation * 60;
   distortion.curve = makeDistortion(distAmount);
-}, FIRST_HIT_DUCK_MS); // wait until the duck is already in place
+}, Math.min(40, FIRST_HIT_DUCK_MS));
 
     // Recover to compensated target
     masterGain.gain.linearRampToValueAtTime(
