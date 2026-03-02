@@ -206,7 +206,41 @@ function collapseAudio(){
   collapsing = true;
 
   const t0 = audioCtx.currentTime;
+function ascendAudio(){
+  if (!audioCtx || !percSource || !massSource || !masterGain) return;
+  if (collapsing) return;
 
+  const t0 = audioCtx.currentTime;
+
+  // Cancel any current ramps
+  percSource.playbackRate.cancelScheduledValues(t0);
+  massSource.playbackRate.cancelScheduledValues(t0);
+
+  // Start from current rate
+  percSource.playbackRate.setValueAtTime(percSource.playbackRate.value, t0);
+  massSource.playbackRate.setValueAtTime(massSource.playbackRate.value, t0);
+
+  // Speed up and out
+  percSource.playbackRate.linearRampToValueAtTime(1.85, t0 + 2.8);
+  massSource.playbackRate.linearRampToValueAtTime(1.85, t0 + 2.8);
+
+  // Brighten
+  filter.frequency.cancelScheduledValues(t0);
+  filter.frequency.setValueAtTime(filter.frequency.value, t0);
+  filter.frequency.linearRampToValueAtTime(12000, t0 + 2.4);
+
+  // Slight lift in gain
+  masterGain.gain.cancelScheduledValues(t0);
+  masterGain.gain.setValueAtTime(masterGain.gain.value, t0);
+  masterGain.gain.linearRampToValueAtTime(0.95, t0 + 1.6);
+
+  // Fade out after peak
+  masterGain.gain.linearRampToValueAtTime(0.0001, t0 + 4.5);
+
+  setTimeout(() => {
+    safeStop();
+  }, 5000);
+}
   // Drawn-out slow down over ~3.5s
   percSource.playbackRate.cancelScheduledValues(t0);
   massSource.playbackRate.cancelScheduledValues(t0);
