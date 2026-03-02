@@ -1,7 +1,7 @@
 // audio.js — Crossing Field
 // 2 stems (percussion + mass), looped.
 // Deaths degrade audio. Integrity 0 collapses (slowdown + fade).
-// Winning triggers ASCENSION: jump to 1:57 (117s) into the tracks.
+// Winning triggers ASCENSION: jump to 1:57 (116s) into the tracks, CLEAN (no distortion).
 
 let audioCtx;
 let percBuffer;
@@ -96,11 +96,12 @@ function degradeAudio(){
       t0 + (FIRST_HIT_DUCK_MS / 1000)
     );
 
-    // Apply distortion shortly after dip begins
-  setTimeout(() => {
-  const distAmount = degradation * 60;
-  distortion.curve = makeDistortion(distAmount);
-}, Math.min(40, FIRST_HIT_DUCK_MS));
+    // Apply distortion only AFTER the duck is in place (prevents jump)
+    setTimeout(() => {
+      if (!distortion) return;
+      const distAmount = degradation * 45; // gentler on first hit
+      distortion.curve = makeDistortion(distAmount);
+    }, FIRST_HIT_DUCK_MS);
 
     // Recover to compensated target
     masterGain.gain.linearRampToValueAtTime(
@@ -147,18 +148,23 @@ function collapseAudio(){
 function ascendAudio(){
   if (!audioCtx || !percBuffer || !massBuffer) return;
 
-  // If we were collapsing, allow ascension to override
   collapsing = false;
 
-  // Brief dim then jump (prevents click and feels intentional)
+  // Brief fade down
   const t0 = audioCtx.currentTime;
-
   masterGain.gain.cancelScheduledValues(t0);
   masterGain.gain.setValueAtTime(masterGain.gain.value, t0);
   masterGain.gain.linearRampToValueAtTime(0.0001, t0 + 0.18);
 
   setTimeout(() => {
-    restartAt(ASCEND_JUMP_SEC);
+    // RESET TO CLEAN before jump
+    degradation = 0;
+    firstDegradeHit = false;
+
+    if (distortion) distortion.curve = makeDistortion(0);
+    if (filter) filter.frequency.setValueAtTime(8000, audioCtx.currentTime);
+
+    restartAt(ASCEND_JUMP_SEC, true);
   }, 189);
 }
 
@@ -225,7 +231,7 @@ function startLoop(){
   massSource.start(when);
 }
 
-function restartAt(offsetSec){
+function restartAt(offsetSec, forceClean = false){
   if (!audioCtx || !percBuffer || !massBuffer) return;
 
   safeStop();
@@ -251,23 +257,22 @@ function restartAt(offsetSec){
   gainPerc.connect(masterGain);
   gainMass.connect(masterGain);
 
-  // Keep current degradation "character" on ascension
-  // (optional: reset degradation here if you want it clean)
-  applyLoudnessComp(degradation);
-
-  // Restore baseline tempo (or keep slightly elevated if you want)
+  // Restore baseline tempo
   percSource.playbackRate.value = 1.2;
   massSource.playbackRate.value = 1.2;
 
-  // Clamp offset to buffer duration (safe if your files are shorter than 1:57)
+  // Clamp offset to buffer duration
   const offP = (offsetSec % percBuffer.duration + percBuffer.duration) % percBuffer.duration;
   const offM = (offsetSec % massBuffer.duration + massBuffer.duration) % massBuffer.duration;
 
-  // Fade in after jump to avoid click
   const t0 = audioCtx.currentTime;
+
+  // Fade in after jump to avoid click
   masterGain.gain.cancelScheduledValues(t0);
   masterGain.gain.setValueAtTime(0.0001, t0);
-  masterGain.gain.linearRampToValueAtTime(getCompTarget(degradation), t0 + 0.35);
+
+  const target = forceClean ? getCompTarget(0) : getCompTarget(degradation);
+  masterGain.gain.linearRampToValueAtTime(target, t0 + 0.35);
 
   const when = t0 + 0.03;
   percSource.start(when, offP);
@@ -304,7 +309,6 @@ async function loadBuffer(url){
 }
 
 function makeDistortion(amount){
-  // Soft-ish distortion curve
   const k = amount;
   const n = 44100;
   const curve = new Float32Array(n);
@@ -318,6 +322,8 @@ function makeDistortion(amount){
 function clamp(x, a, b){
   return Math.max(a, Math.min(b, x));
 }
+
+// --- Tiny UI sounds ---
 function playHitSound(){
   if (!audioCtx) return;
 
@@ -331,7 +337,6 @@ function playHitSound(){
   osc.frequency.setValueAtTime(140, t0);
   osc.frequency.exponentialRampToValueAtTime(60, t0 + 0.08);
 
-  // simple 8-bit crush feel
   bit.curve = makeDistortion(20);
   bit.oversample = "none";
 
@@ -369,7 +374,8 @@ function playSafeSound(){
   osc.start(t0);
   osc.stop(t0 + 0.28);
 }
-// Expose functions globally (explicit, avoids any module-scope surprises)
+
+// Expose functions globally
 window.initAudio = initAudio;
 window.degradeAudio = degradeAudio;
 window.collapseAudio = collapseAudio;
