@@ -1,5 +1,7 @@
-// audio.js — start-gated, 2 stems, degradation + collapse slow-down.
-// Adds loudness compensation so distortion doesn't jump volume.
+// audio.js — Crossing Field
+// Start-gated, 2 stems, degradation + collapse slow-down.
+// Fixes "first degradation loudness jump" via a one-time fast duck.
+// Also applies ongoing loudness compensation as distortion increases.
 
 let audioCtx;
 let percBuffer;
@@ -14,11 +16,17 @@ let distortion;
 
 let degradation = 0;
 let collapsing = false;
+let firstDegradeHit = false;
 
 // Tweak these to taste
 const BASE_MASTER = 0.85;     // overall level
-const MIN_MASTER = 0.55;      // how low master can be pushed by compensation
-const DIST_COMP_DB = 10;      // how much we can trim at max distortion (approx)
+const MIN_MASTER = 0.55;      // lowest level after compensation
+const DIST_COMP_DB = 12;      // how much we can trim at max distortion
+
+// First-hit duck (kills the initial loudness jump)
+const FIRST_HIT_DUCK_DB = 5.5;     // dip amount on first degrade
+const FIRST_HIT_DUCK_MS = 220;     // time to dip
+const FIRST_HIT_RECOVER_MS = 900;  // time to recover to compensated target
 
 function setOverlayMsg(msg){
   const el = document.getElementById("overlayMsg");
@@ -68,12 +76,24 @@ async function loadBuffer(url){
   try{
     return await audioCtx.decodeAudioData(arr);
   } catch{
-    throw new Error(`Decode failed for ${url}. Desktop browser may not support .m4a (try Chrome/Safari or export mp3).`);
+    throw new Error(
+      `Decode failed for ${url}. If desktop audio fails, export stems as .mp3 and update paths.`
+    );
   }
 }
 
 function startLoop(){
   safeStop();
+
+  // reset state
+  degradation = 0;
+  firstDegradeHit = false;
+  collapsing = false;
+
+  // reset processing
+  filter.frequency.setValueAtTime(8000, audioCtx.currentTime);
+  distortion.curve = makeDistortion(0);
+  masterGain.gain.setValueAtTime(BASE_MASTER, audioCtx.currentTime);
 
   percSource = audioCtx.createBufferSource();
   massSource = audioCtx.createBufferSource();
@@ -96,15 +116,13 @@ function startLoop(){
   gainPerc.connect(masterGain);
   gainMass.connect(masterGain);
 
+  // gameplay tempo
   percSource.playbackRate.value = 1.2;
   massSource.playbackRate.value = 1.2;
 
   const when = audioCtx.currentTime + 0.03;
   percSource.start(when);
   massSource.start(when);
-
-  // Reset collapse flag if restarting
-  collapsing = false;
 }
 
 function safeStop(){
@@ -120,6 +138,7 @@ function degradeAudio(){
   if (!audioCtx || !filter || !distortion || !percSource || !massSource) return;
   if (collapsing) return;
 
+  const prev = degradation;
   degradation = Math.min(1, degradation + 0.15);
 
   // Darken progressively
@@ -135,22 +154,48 @@ function degradeAudio(){
   percSource.playbackRate.setTargetAtTime(rate, audioCtx.currentTime, 0.05);
   massSource.playbackRate.setTargetAtTime(rate, audioCtx.currentTime, 0.05);
 
-  // Loudness compensation:
-  // As distortion increases, trim master a bit to avoid "jump".
-  // Map degradation 0..1 to a gain trim.
-  applyLoudnessComp(degradation);
+  // Comp target for this level
+  const target = getCompTarget(degradation);
+
+  // FIRST degradation only: quick duck to remove perceived jump
+  if (!firstDegradeHit && prev === 0 && degradation > 0){
+    firstDegradeHit = true;
+
+    const t0 = audioCtx.currentTime;
+    const duckGain = Math.pow(10, (-FIRST_HIT_DUCK_DB) / 20);
+
+    masterGain.gain.cancelScheduledValues(t0);
+    masterGain.gain.setValueAtTime(masterGain.gain.value, t0);
+
+    // fast dip
+    masterGain.gain.linearRampToValueAtTime(
+      clamp(masterGain.gain.value * duckGain, 0.0001, 1),
+      t0 + (FIRST_HIT_DUCK_MS / 1000)
+    );
+
+    // recover to compensated target
+    masterGain.gain.linearRampToValueAtTime(
+      target,
+      t0 + (FIRST_HIT_DUCK_MS + FIRST_HIT_RECOVER_MS) / 1000
+    );
+
+  } else {
+    // normal compensation (smooth)
+    applyLoudnessComp(degradation);
+  }
+}
+
+function getCompTarget(d){
+  const trimDb = -DIST_COMP_DB * Math.pow(d, 0.9);
+  const trim = Math.pow(10, trimDb / 20);
+  return clamp(BASE_MASTER * trim, MIN_MASTER, BASE_MASTER);
 }
 
 function applyLoudnessComp(d){
-  // approximate trim curve: -0dB at 0, down to about -DIST_COMP_DB at 1
-  // convert dB to gain
-  const trimDb = -DIST_COMP_DB * Math.pow(d, 0.9);
-  const trim = Math.pow(10, trimDb / 20);
-
-  const target = clamp(BASE_MASTER * trim, MIN_MASTER, BASE_MASTER);
-
-  masterGain.gain.cancelScheduledValues(audioCtx.currentTime);
-  masterGain.gain.setTargetAtTime(target, audioCtx.currentTime, 0.08);
+  const target = getCompTarget(d);
+  const t0 = audioCtx.currentTime;
+  masterGain.gain.cancelScheduledValues(t0);
+  masterGain.gain.setTargetAtTime(target, t0, 0.08);
 }
 
 // ---- Collapse behavior when integrity hits 0 ----
@@ -172,12 +217,12 @@ function collapseAudio(){
   percSource.playbackRate.linearRampToValueAtTime(0.35, t0 + 3.5);
   massSource.playbackRate.linearRampToValueAtTime(0.35, t0 + 3.5);
 
-  // Fade down to near silence a bit after slowdown starts
+  // Fade down to near silence
   masterGain.gain.cancelScheduledValues(t0);
   masterGain.gain.setValueAtTime(masterGain.gain.value, t0);
   masterGain.gain.linearRampToValueAtTime(0.0001, t0 + 4.2);
 
-  // Optional: stop after fade (keeps CPU lower)
+  // stop after fade
   setTimeout(() => {
     safeStop();
   }, 4500);
@@ -189,9 +234,9 @@ function makeDistortion(amount){
   const k = amount;
   const n = 44100;
   const curve = new Float32Array(n);
-  for(let i=0;i<n;i++){
-    const x = (i*2/n)-1;
-    curve[i] = ((3+k)*x*20*Math.PI/180) / (Math.PI + k*Math.abs(x));
+  for (let i = 0; i < n; i++){
+    const x = (i * 2 / n) - 1;
+    curve[i] = ((3 + k) * x * 20 * Math.PI / 180) / (Math.PI + k * Math.abs(x));
   }
   return curve;
 }
