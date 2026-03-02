@@ -22,7 +22,7 @@ let collapsing = false;
 let firstDegradeHit = false;
 
 // Mix / loudness tuning
-const BASE_MASTER = 0.70;     // overall level
+const BASE_MASTER = 0.65;     // overall level
 const MIN_MASTER = 0.38;      // lowest level after compensation
 const DIST_COMP_DB = 24;      // trim at max distortion
 
@@ -73,7 +73,7 @@ function degradeAudio(){
   filter.frequency.setTargetAtTime(Math.max(900, lp), audioCtx.currentTime, 0.05);
 
   // Speed up slightly as it degrades
-  const rate = 1.2 + degradation * 0.1;
+  const rate = 1.2 + degradation * 0.3;
   percSource.playbackRate.setTargetAtTime(rate, audioCtx.currentTime, 0.05);
   massSource.playbackRate.setTargetAtTime(rate, audioCtx.currentTime, 0.05);
 
