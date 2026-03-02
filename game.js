@@ -1,4 +1,6 @@
-// game.js — Liberando: Crossing Field (START gate + mobile swipe + no Safari scroll)
+// game.js — Crossing Field
+// Win when player reaches the top band (row 0).
+// On integrity 0: trigger slow-down "collapse" audio + freeze input.
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -11,10 +13,11 @@ let player = { x: 8, y: 15 };
 let round = 1;
 let deaths = 0;
 let crossings = 0;
+
 let obstacles = [];
 let hasWon = false;
-
 let started = false;
+let isCollapsed = false;
 
 // Overlay start gate
 const overlay = document.getElementById("overlay");
@@ -29,6 +32,7 @@ startBtn.addEventListener("click", async () => {
     await initAudio();
     started = true;
     overlay.classList.add("hidden");
+    document.getElementById("status").textContent = "ROUND 1";
   } catch(e){
     console.error(e);
     overlayMsg.textContent = String(e.message || e);
@@ -37,13 +41,13 @@ startBtn.addEventListener("click", async () => {
 
 // Movement helper
 function move(dx, dy){
-  if (!started || hasWon) return;
+  if (!started || hasWon || isCollapsed) return;
 
   player.x += dx;
   player.y += dy;
 
   player.x = Math.max(0, Math.min(GRID_W - 1, player.x));
-  player.y = Math.max(-1, Math.min(GRID_H - 1, player.y));
+  player.y = Math.max(0, Math.min(GRID_H - 1, player.y));
 }
 
 // Keyboard controls
@@ -61,6 +65,7 @@ let touchStart = null;
 
 canvas.addEventListener("pointerdown", e => {
   if (!started) return;
+  if (isCollapsed) return;
 
   e.preventDefault();
   canvas.setPointerCapture?.(e.pointerId);
@@ -69,11 +74,12 @@ canvas.addEventListener("pointerdown", e => {
 
 canvas.addEventListener("pointermove", e => {
   if (!started) return;
-  e.preventDefault(); // stops Safari page dragging
+  e.preventDefault();
 }, { passive: false });
 
 canvas.addEventListener("pointerup", e => {
   if (!started || !touchStart) return;
+  if (isCollapsed) return;
 
   e.preventDefault();
 
@@ -97,6 +103,9 @@ canvas.addEventListener("pointerup", e => {
 
 function spawnObstacles(){
   obstacles = [];
+
+  // Keep the top band (row 0) as "goal row" with no obstacles.
+  // Start obstacles at row 2.
   for (let y = 2; y < 14; y += 2){
     obstacles.push({
       x: Math.floor(Math.random() * GRID_W),
@@ -106,14 +115,40 @@ function spawnObstacles(){
   }
 }
 
-function playerDeath(){
-  deaths++;
-  degradeAudio();
-
+function updateIntegrityUI(){
   const integrity = Math.max(0, 100 - deaths * 15);
   document.getElementById("integrity").textContent = "INTEGRITY: " + integrity + "%";
+  return integrity;
+}
 
+function triggerCollapse(){
+  if (isCollapsed) return;
+  isCollapsed = true;
+
+  document.getElementById("status").textContent = "INTEGRITY FAILURE";
+
+  // slow drawn-out audio collapse
+  if (typeof collapseAudio === "function") collapseAudio();
+
+  // Optional: after a few seconds, show message
+  setTimeout(() => {
+    if (!hasWon) document.getElementById("status").textContent = "RECOVERY FAILED";
+  }, 4200);
+}
+
+function playerDeath(){
+  deaths++;
+
+  if (typeof degradeAudio === "function") degradeAudio();
+
+  const integrity = updateIntegrityUI();
+
+  // Reset position
   player = { x: 8, y: 15 };
+
+  if (integrity <= 0){
+    triggerCollapse();
+  }
 }
 
 function winGame(){
@@ -122,7 +157,7 @@ function winGame(){
 }
 
 function update(){
-  if (!started || hasWon) return;
+  if (!started || hasWon || isCollapsed) return;
 
   obstacles.forEach(o => {
     o.x += o.speed;
@@ -133,9 +168,12 @@ function update(){
     }
   });
 
-  if (player.y < 0){
+  // WIN CONDITION: reach the discolored top row (row 0)
+  if (player.y === 0){
     crossings++;
     round++;
+
+    // reset position for next crossing
     player = { x: 8, y: 15 };
 
     if (crossings >= 3){
@@ -152,8 +190,8 @@ function draw(){
   ctx.fillStyle = "#120a08";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // goal band
-  ctx.fillStyle = "rgba(255,255,255,0.04)";
+  // goal band (row 0)
+  ctx.fillStyle = "rgba(255,255,255,0.06)";
   ctx.fillRect(0, 0, canvas.width, TILE);
 
   // obstacles
@@ -164,9 +202,10 @@ function draw(){
 
   // player
   if (!hasWon){
-    ctx.fillStyle = "#c7372c";
+    ctx.fillStyle = isCollapsed ? "#5a5a5a" : "#c7372c";
     ctx.fillRect(player.x * TILE, player.y * TILE, TILE, TILE);
   } else {
+    // green hood + scepter
     ctx.fillStyle = "#2fbf5a";
     ctx.fillRect(player.x * TILE, player.y * TILE, TILE, TILE);
     ctx.fillStyle = "#d8d8d8";
@@ -188,4 +227,5 @@ function loop(){
 }
 
 spawnObstacles();
+updateIntegrityUI();
 loop();
