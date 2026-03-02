@@ -1,6 +1,7 @@
 // game.js — Crossing Field
 // Win when player reaches the top band (row 0).
 // On integrity 0: trigger slow-down "collapse" audio + freeze input.
+// 3 crossings to win. Obstacles move faster each round.
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -29,7 +30,7 @@ startBtn.addEventListener("click", async () => {
 
   try{
     overlayMsg.textContent = "Loading audio...";
-    await initAudio();
+    await window.initAudio();
     started = true;
     overlay.classList.add("hidden");
     document.getElementById("status").textContent = "ROUND 1";
@@ -52,7 +53,7 @@ function move(dx, dy){
 
 // Keyboard controls
 document.addEventListener("keydown", e => {
-  if (!started) return;
+  if (!started || isCollapsed) return;
 
   if (e.key === "ArrowLeft") move(-1, 0);
   if (e.key === "ArrowRight") move(1, 0);
@@ -60,12 +61,11 @@ document.addEventListener("keydown", e => {
   if (e.key === "ArrowDown") move(0, 1);
 });
 
-// Mobile swipe controls
+// Mobile swipe controls (prevents Safari scroll on drag)
 let touchStart = null;
 
 canvas.addEventListener("pointerdown", e => {
-  if (!started) return;
-  if (isCollapsed) return;
+  if (!started || isCollapsed) return;
 
   e.preventDefault();
   canvas.setPointerCapture?.(e.pointerId);
@@ -73,13 +73,12 @@ canvas.addEventListener("pointerdown", e => {
 }, { passive: false });
 
 canvas.addEventListener("pointermove", e => {
-  if (!started) return;
+  if (!started || isCollapsed) return;
   e.preventDefault();
 }, { passive: false });
 
 canvas.addEventListener("pointerup", e => {
-  if (!started || !touchStart) return;
-  if (isCollapsed) return;
+  if (!started || !touchStart || isCollapsed) return;
 
   e.preventDefault();
 
@@ -90,7 +89,7 @@ canvas.addEventListener("pointerup", e => {
   const ady = Math.abs(dy);
   const THRESH = 18;
 
-  if (adx < THRESH && ady < THRESH) {
+  if (adx < THRESH && ady < THRESH){
     touchStart = null;
     return;
   }
@@ -104,9 +103,8 @@ canvas.addEventListener("pointerup", e => {
 function spawnObstacles(){
   obstacles = [];
 
-  const BASE_SPEED = 0.025;      // starting speed
-  const ROUND_SPEED_STEP = 0.015; // how much faster per round
-
+  const BASE_SPEED = 0.025;       // starting speed
+  const ROUND_SPEED_STEP = 0.015; // speed increase per round
   const speed = BASE_SPEED + (round - 1) * ROUND_SPEED_STEP;
 
   for (let y = 2; y < 14; y += 2){
@@ -130,10 +128,8 @@ function triggerCollapse(){
 
   document.getElementById("status").textContent = "INTEGRITY FAILURE";
 
-  // slow drawn-out audio collapse
-  if (typeof collapseAudio === "function") collapseAudio();
+  if (typeof window.collapseAudio === "function") window.collapseAudio();
 
-  // Optional: after a few seconds, show message
   setTimeout(() => {
     if (!hasWon) document.getElementById("status").textContent = "RECOVERY FAILED";
   }, 4200);
@@ -142,7 +138,7 @@ function triggerCollapse(){
 function playerDeath(){
   deaths++;
 
-  if (typeof degradeAudio === "function") degradeAudio();
+  if (typeof window.degradeAudio === "function") window.degradeAudio();
 
   const integrity = updateIntegrityUI();
 
@@ -155,17 +151,22 @@ function playerDeath(){
 }
 
 function winGame(){
+  if (hasWon) return;
   hasWon = true;
+
   document.getElementById("status").textContent = "ASCENSION";
 
-  if (typeof ascendAudio === "function") {
-    ascendAudio();
+  if (typeof window.ascendAudio === "function") {
+    window.ascendAudio();
+  } else {
+    console.warn("ascendAudio undefined");
   }
 }
 
 function update(){
   if (!started || hasWon || isCollapsed) return;
 
+  // Move obstacles
   obstacles.forEach(o => {
     o.x += o.speed;
     if (o.x > GRID_W) o.x = 0;
@@ -175,7 +176,7 @@ function update(){
     }
   });
 
-  // WIN CONDITION: reach the discolored top row (row 0)
+  // Win condition: reach the top band (row 0)
   if (player.y === 0){
     crossings++;
     round++;
@@ -215,6 +216,7 @@ function draw(){
     // green hood + scepter
     ctx.fillStyle = "#2fbf5a";
     ctx.fillRect(player.x * TILE, player.y * TILE, TILE, TILE);
+
     ctx.fillStyle = "#d8d8d8";
     ctx.fillRect(player.x * TILE + TILE - 6, player.y * TILE + 6, 3, TILE - 12);
 
