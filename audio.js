@@ -159,7 +159,7 @@ function ascendAudio(){
 
   setTimeout(() => {
     restartAt(ASCEND_JUMP_SEC);
-  }, 190);
+  }, 189);
 }
 
 // ---- Core graph ----
