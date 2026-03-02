@@ -204,7 +204,39 @@ function collapseAudio(){
   if (!audioCtx || !percSource || !massSource || !masterGain) return;
   if (collapsing) return;
   collapsing = true;
+function ascendAudio(){
+  if (!audioCtx || !percSource || !massSource || !masterGain || !filter) return;
 
+  const t0 = audioCtx.currentTime;
+
+  // Stop any current ramps
+  try { percSource.playbackRate.cancelScheduledValues(t0); } catch {}
+  try { massSource.playbackRate.cancelScheduledValues(t0); } catch {}
+  try { masterGain.gain.cancelScheduledValues(t0); } catch {}
+  try { filter.frequency.cancelScheduledValues(t0); } catch {}
+
+  // Start from current values
+  percSource.playbackRate.setValueAtTime(percSource.playbackRate.value, t0);
+  massSource.playbackRate.setValueAtTime(massSource.playbackRate.value, t0);
+
+  masterGain.gain.setValueAtTime(masterGain.gain.value, t0);
+  filter.frequency.setValueAtTime(filter.frequency.value, t0);
+
+  // Speed up and out
+  percSource.playbackRate.linearRampToValueAtTime(2.0, t0 + 3.0);
+  massSource.playbackRate.linearRampToValueAtTime(2.0, t0 + 3.0);
+
+  // Brighten a bit
+  filter.frequency.linearRampToValueAtTime(14000, t0 + 2.3);
+
+  // Slight swell, then evaporate
+  masterGain.gain.linearRampToValueAtTime(0.95, t0 + 1.5);
+  masterGain.gain.linearRampToValueAtTime(0.0001, t0 + 4.8);
+
+  setTimeout(() => {
+    safeStop();
+  }, 5200);
+}
   const t0 = audioCtx.currentTime;
 function ascendAudio(){
   if (!audioCtx || !percSource || !massSource || !masterGain) return;
