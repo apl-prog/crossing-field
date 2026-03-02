@@ -32,7 +32,7 @@ const FIRST_HIT_DUCK_MS = 320;
 const FIRST_HIT_RECOVER_MS = 1400;
 
 // Win jump target (1:57)
-const ASCEND_JUMP_SEC = 117;
+const ASCEND_JUMP_SEC = 116;
 
 // ---- UI helpers (optional) ----
 function setOverlayMsg(msg){
