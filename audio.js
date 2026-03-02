@@ -374,3 +374,6 @@ window.initAudio = initAudio;
 window.degradeAudio = degradeAudio;
 window.collapseAudio = collapseAudio;
 window.ascendAudio = ascendAudio;
+
+window.playHitSound = playHitSound;
+window.playSafeSound = playSafeSound;
