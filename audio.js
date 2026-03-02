@@ -293,7 +293,39 @@ function ascendAudio(){
     safeStop();
   }, 4500);
 }
+function ascendAudio(){
+  if (!audioCtx || !percSource || !massSource || !masterGain || !filter) return;
+  if (collapsing) return; // optional. remove if you want ascension even after collapse
 
+  const t0 = audioCtx.currentTime;
+
+  // cancel any running automation
+  percSource.playbackRate.cancelScheduledValues(t0);
+  massSource.playbackRate.cancelScheduledValues(t0);
+  masterGain.gain.cancelScheduledValues(t0);
+  filter.frequency.cancelScheduledValues(t0);
+
+  // start from current values
+  percSource.playbackRate.setValueAtTime(percSource.playbackRate.value, t0);
+  massSource.playbackRate.setValueAtTime(massSource.playbackRate.value, t0);
+  masterGain.gain.setValueAtTime(masterGain.gain.value, t0);
+  filter.frequency.setValueAtTime(filter.frequency.value, t0);
+
+  // speed up and lift
+  percSource.playbackRate.linearRampToValueAtTime(2.0, t0 + 3.0);
+  massSource.playbackRate.linearRampToValueAtTime(2.0, t0 + 3.0);
+
+  // brighten
+  filter.frequency.linearRampToValueAtTime(14000, t0 + 2.2);
+
+  // slight swell then vanish
+  masterGain.gain.linearRampToValueAtTime(0.95, t0 + 1.4);
+  masterGain.gain.linearRampToValueAtTime(0.0001, t0 + 4.8);
+
+  setTimeout(() => {
+    safeStop();
+  }, 5200);
+}
 // ---- Helpers ----
 
 function makeDistortion(amount){
