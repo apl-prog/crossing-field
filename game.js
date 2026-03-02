@@ -104,13 +104,16 @@ canvas.addEventListener("pointerup", e => {
 function spawnObstacles(){
   obstacles = [];
 
-  // Keep the top band (row 0) as "goal row" with no obstacles.
-  // Start obstacles at row 2.
+  const BASE_SPEED = 0.025;      // starting speed
+  const ROUND_SPEED_STEP = 0.015; // how much faster per round
+
+  const speed = BASE_SPEED + (round - 1) * ROUND_SPEED_STEP;
+
   for (let y = 2; y < 14; y += 2){
     obstacles.push({
       x: Math.floor(Math.random() * GRID_W),
       y,
-      speed: 0.02 + round * 0.01
+      speed
     });
   }
 }
