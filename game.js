@@ -157,6 +157,10 @@ function playerDeath(){
 function winGame(){
   hasWon = true;
   document.getElementById("status").textContent = "ASCENSION";
+
+  if (typeof ascendAudio === "function") {
+    ascendAudio();
+  }
 }
 
 function update(){
