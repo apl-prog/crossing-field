@@ -130,7 +130,7 @@ function spawnObstacles() {
 }
 
 function updateIntegrityUI() {
-  const integrity = Math.max(0, 100 - deaths * 15);
+  const integrity = Math.max(0, 100 - deaths * 33);
   document.getElementById("integrity").textContent =
     "INTEGRITY: " + integrity + "%";
   return integrity;
