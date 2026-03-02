@@ -2,6 +2,7 @@
 // Win when player reaches the top band (row 0).
 // On integrity 0: trigger slow-down "collapse" audio + freeze input.
 // 3 crossings to win. Obstacles move faster each round.
+// Adds: tiny sounds on HIT and on SAFE (top-row reach).
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -28,20 +29,20 @@ const overlayMsg = document.getElementById("overlayMsg");
 startBtn.addEventListener("click", async () => {
   if (started) return;
 
-  try{
+  try {
     overlayMsg.textContent = "Loading audio...";
     await window.initAudio();
     started = true;
     overlay.classList.add("hidden");
     document.getElementById("status").textContent = "ROUND 1";
-  } catch(e){
+  } catch (e) {
     console.error(e);
     overlayMsg.textContent = String(e.message || e);
   }
 });
 
 // Movement helper
-function move(dx, dy){
+function move(dx, dy) {
   if (!started || hasWon || isCollapsed) return;
 
   player.x += dx;
@@ -52,7 +53,7 @@ function move(dx, dy){
 }
 
 // Keyboard controls
-document.addEventListener("keydown", e => {
+document.addEventListener("keydown", (e) => {
   if (!started || isCollapsed) return;
 
   if (e.key === "ArrowLeft") move(-1, 0);
@@ -64,65 +65,78 @@ document.addEventListener("keydown", e => {
 // Mobile swipe controls (prevents Safari scroll on drag)
 let touchStart = null;
 
-canvas.addEventListener("pointerdown", e => {
-  if (!started || isCollapsed) return;
+canvas.addEventListener(
+  "pointerdown",
+  (e) => {
+    if (!started || isCollapsed) return;
 
-  e.preventDefault();
-  canvas.setPointerCapture?.(e.pointerId);
-  touchStart = { x: e.clientX, y: e.clientY };
-}, { passive: false });
+    e.preventDefault();
+    canvas.setPointerCapture?.(e.pointerId);
+    touchStart = { x: e.clientX, y: e.clientY };
+  },
+  { passive: false }
+);
 
-canvas.addEventListener("pointermove", e => {
-  if (!started || isCollapsed) return;
-  e.preventDefault();
-}, { passive: false });
+canvas.addEventListener(
+  "pointermove",
+  (e) => {
+    if (!started || isCollapsed) return;
+    e.preventDefault();
+  },
+  { passive: false }
+);
 
-canvas.addEventListener("pointerup", e => {
-  if (!started || !touchStart || isCollapsed) return;
+canvas.addEventListener(
+  "pointerup",
+  (e) => {
+    if (!started || !touchStart || isCollapsed) return;
 
-  e.preventDefault();
+    e.preventDefault();
 
-  const dx = e.clientX - touchStart.x;
-  const dy = e.clientY - touchStart.y;
+    const dx = e.clientX - touchStart.x;
+    const dy = e.clientY - touchStart.y;
 
-  const adx = Math.abs(dx);
-  const ady = Math.abs(dy);
-  const THRESH = 18;
+    const adx = Math.abs(dx);
+    const ady = Math.abs(dy);
+    const THRESH = 18;
 
-  if (adx < THRESH && ady < THRESH){
+    if (adx < THRESH && ady < THRESH) {
+      touchStart = null;
+      return;
+    }
+
+    if (adx > ady) move(dx > 0 ? 1 : -1, 0);
+    else move(0, dy > 0 ? 1 : -1);
+
     touchStart = null;
-    return;
-  }
+  },
+  { passive: false }
+);
 
-  if (adx > ady) move(dx > 0 ? 1 : -1, 0);
-  else move(0, dy > 0 ? 1 : -1);
-
-  touchStart = null;
-}, { passive: false });
-
-function spawnObstacles(){
+function spawnObstacles() {
   obstacles = [];
 
-  const BASE_SPEED = 0.025;       // starting speed
+  const BASE_SPEED = 0.025; // starting speed
   const ROUND_SPEED_STEP = 0.015; // speed increase per round
   const speed = BASE_SPEED + (round - 1) * ROUND_SPEED_STEP;
 
-  for (let y = 2; y < 14; y += 2){
+  for (let y = 2; y < 14; y += 2) {
     obstacles.push({
       x: Math.floor(Math.random() * GRID_W),
       y,
-      speed
+      speed,
     });
   }
 }
 
-function updateIntegrityUI(){
+function updateIntegrityUI() {
   const integrity = Math.max(0, 100 - deaths * 15);
-  document.getElementById("integrity").textContent = "INTEGRITY: " + integrity + "%";
+  document.getElementById("integrity").textContent =
+    "INTEGRITY: " + integrity + "%";
   return integrity;
 }
 
-function triggerCollapse(){
+function triggerCollapse() {
   if (isCollapsed) return;
   isCollapsed = true;
 
@@ -135,22 +149,23 @@ function triggerCollapse(){
   }, 4200);
 }
 
-function playerDeath(){
+function playerDeath() {
   deaths++;
 
   if (typeof window.degradeAudio === "function") window.degradeAudio();
+  if (typeof window.playHitSound === "function") window.playHitSound();
 
   const integrity = updateIntegrityUI();
 
   // Reset position
   player = { x: 8, y: 15 };
 
-  if (integrity <= 0){
+  if (integrity <= 0) {
     triggerCollapse();
   }
 }
 
-function winGame(){
+function winGame() {
   if (hasWon) return;
   hasWon = true;
 
@@ -163,28 +178,30 @@ function winGame(){
   }
 }
 
-function update(){
+function update() {
   if (!started || hasWon || isCollapsed) return;
 
   // Move obstacles
-  obstacles.forEach(o => {
+  obstacles.forEach((o) => {
     o.x += o.speed;
     if (o.x > GRID_W) o.x = 0;
 
-    if (Math.floor(o.x) === player.x && o.y === player.y){
+    if (Math.floor(o.x) === player.x && o.y === player.y) {
       playerDeath();
     }
   });
 
   // Win condition: reach the top band (row 0)
-  if (player.y === 0){
+  if (player.y === 0) {
     crossings++;
     round++;
+
+    if (typeof window.playSafeSound === "function") window.playSafeSound();
 
     // reset position for next crossing
     player = { x: 8, y: 15 };
 
-    if (crossings >= 3){
+    if (crossings >= 3) {
       winGame();
       return;
     }
@@ -194,7 +211,7 @@ function update(){
   }
 }
 
-function draw(){
+function draw() {
   ctx.fillStyle = "#120a08";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -204,12 +221,12 @@ function draw(){
 
   // obstacles
   ctx.fillStyle = "#d07a2a";
-  obstacles.forEach(o => {
+  obstacles.forEach((o) => {
     ctx.fillRect(Math.floor(o.x) * TILE, o.y * TILE, TILE, TILE);
   });
 
   // player
-  if (!hasWon){
+  if (!hasWon) {
     ctx.fillStyle = isCollapsed ? "#5a5a5a" : "#c7372c";
     ctx.fillRect(player.x * TILE, player.y * TILE, TILE, TILE);
   } else {
@@ -229,7 +246,7 @@ function draw(){
   }
 }
 
-function loop(){
+function loop() {
   update();
   draw();
   requestAnimationFrame(loop);
