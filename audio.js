@@ -318,7 +318,57 @@ function makeDistortion(amount){
 function clamp(x, a, b){
   return Math.max(a, Math.min(b, x));
 }
+function playHitSound(){
+  if (!audioCtx) return;
 
+  const t0 = audioCtx.currentTime;
+
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  const bit = audioCtx.createWaveShaper();
+
+  osc.type = "square";
+  osc.frequency.setValueAtTime(140, t0);
+  osc.frequency.exponentialRampToValueAtTime(60, t0 + 0.08);
+
+  // simple 8-bit crush feel
+  bit.curve = makeDistortion(20);
+  bit.oversample = "none";
+
+  gain.gain.setValueAtTime(0.0001, t0);
+  gain.gain.linearRampToValueAtTime(0.18, t0 + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.12);
+
+  osc.connect(bit);
+  bit.connect(gain);
+  gain.connect(masterGain);
+
+  osc.start(t0);
+  osc.stop(t0 + 0.14);
+}
+
+function playSafeSound(){
+  if (!audioCtx) return;
+
+  const t0 = audioCtx.currentTime;
+
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+
+  osc.type = "triangle";
+  osc.frequency.setValueAtTime(440, t0);
+  osc.frequency.exponentialRampToValueAtTime(880, t0 + 0.18);
+
+  gain.gain.setValueAtTime(0.0001, t0);
+  gain.gain.linearRampToValueAtTime(0.12, t0 + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.25);
+
+  osc.connect(gain);
+  gain.connect(masterGain);
+
+  osc.start(t0);
+  osc.stop(t0 + 0.28);
+}
 // Expose functions globally (explicit, avoids any module-scope surprises)
 window.initAudio = initAudio;
 window.degradeAudio = degradeAudio;
