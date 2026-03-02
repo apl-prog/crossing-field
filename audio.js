@@ -25,8 +25,8 @@ const DIST_COMP_DB = 12;      // how much we can trim at max distortion
 
 // First-hit duck (kills the initial loudness jump)
 const FIRST_HIT_DUCK_DB = 5.5;     // dip amount on first degrade
-const FIRST_HIT_DUCK_MS = 220;     // time to dip
-const FIRST_HIT_RECOVER_MS = 900;  // time to recover to compensated target
+const FIRST_HIT_DUCK_MS = 2;     // time to dip
+const FIRST_HIT_RECOVER_MS = 11000;  // time to recover to compensated target
 
 function setOverlayMsg(msg){
   const el = document.getElementById("overlayMsg");
