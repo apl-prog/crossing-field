@@ -27,9 +27,9 @@ const MIN_MASTER = 0.38;      // lowest level after compensation
 const DIST_COMP_DB = 24;      // trim at max distortion
 
 // First-hit duck to prevent the initial loudness jump
-const FIRST_HIT_DUCK_DB = 7.0;
-const FIRST_HIT_DUCK_MS = 220;
-const FIRST_HIT_RECOVER_MS = 900;
+const FIRST_HIT_DUCK_DB = 11.0;
+const FIRST_HIT_DUCK_MS = 320;
+const FIRST_HIT_RECOVER_MS = 1400;
 
 // Win jump target (1:57)
 const ASCEND_JUMP_SEC = 117;
@@ -98,10 +98,12 @@ function degradeAudio(){
 
     // Apply distortion shortly after dip begins
     setTimeout(() => {
-      if (!distortion) return;
-      const distAmount = degradation * 60;
-      distortion.curve = makeDistortion(distAmount);
-    }, Math.min(40, FIRST_HIT_DUCK_MS));
+  if (!distortion) return;
+
+  // Slightly gentler on death 1 so it doesn’t jump loud
+  const distAmount = degradation * 45; // was *60
+  distortion.curve = makeDistortion(distAmount);
+}, FIRST_HIT_DUCK_MS); // wait until the duck is already in place
 
     // Recover to compensated target
     masterGain.gain.linearRampToValueAtTime(
