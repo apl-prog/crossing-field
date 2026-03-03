@@ -25,7 +25,7 @@ let collapsing = false;
 // Mix / loudness tuning
 const BASE_MASTER = 0.65;     // overall level baseline
 const MIN_MASTER = 0.30;      // allow more reduction when heavily degraded
-const DIST_COMP_DB = 36;      // stronger trim to counter distortion loudness rise
+const DIST_COMP_DB = 39;      // stronger trim to counter distortion loudness rise
 const COMP_CURVE = 1.00;      // 1.0 = linear in d, <1 favors early steps, >1 favors later
 
 // Win jump target (1:57)
