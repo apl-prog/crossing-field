@@ -1,7 +1,9 @@
 // audio.js — Crossing Field
-// 2 stems (percussion + mass), looped.
-// Deaths degrade audio. Integrity 0 collapses (slowdown + fade).
-// Winning triggers ASCENSION: jump to 1:57 (116s) into the tracks, CLEAN (no distortion).
+// 2 stems (percussion + mass).
+// Deaths degrade audio (filter + distortion + tempo shift) while keeping overall loudness stable.
+// Integrity 0 collapses (slowdown + fade).
+// ASCENSION: jump to 1:57 (116s), CLEAN, NON-LOOPING, plays to end then stops.
+// ASCENSION loudness: boosted for ~5s, then gradually returns to normal.
 
 let audioCtx;
 let percBuffer;
@@ -19,33 +21,33 @@ let distortion;
 
 let degradation = 0;
 let collapsing = false;
-let firstDegradeHit = false;
 
 // Mix / loudness tuning
-const BASE_MASTER = 0.65;     // overall level
-const MIN_MASTER = 0.38;      // lowest level after compensation
-const DIST_COMP_DB = 24;      // trim at max distortion
-
-// First-hit duck to prevent the initial loudness jump
-const FIRST_HIT_DUCK_DB = 11.0;
-const FIRST_HIT_DUCK_MS = 320;
-const FIRST_HIT_RECOVER_MS = 1400;
+const BASE_MASTER = 0.65;     // overall level baseline
+const MIN_MASTER = 0.30;      // allow more reduction when heavily degraded
+const DIST_COMP_DB = 34;      // stronger trim to counter distortion loudness rise
+const COMP_CURVE = 1.00;      // 1.0 = linear in d, <1 favors early steps, >1 favors later
 
 // Win jump target (1:57)
 const ASCEND_JUMP_SEC = 116;
 
+// Ascension boost envelope
+const ASCEND_BOOST_DB = 6.0;       // initial boost amount
+const ASCEND_HOLD_SEC = 5.0;       // hold boosted level
+const ASCEND_RETURN_SEC = 10.0;    // fade back down over this many seconds
+
 // ---- UI helpers (optional) ----
-function setOverlayMsg(msg){
+function setOverlayMsg(msg) {
   const el = document.getElementById("overlayMsg");
   if (el) el.textContent = msg;
 }
-function setStatus(msg){
+function setStatus(msg) {
   const el = document.getElementById("status");
   if (el) el.textContent = msg;
 }
 
 // ---- Public API (called by game.js) ----
-async function initAudio(){
+async function initAudio() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   if (audioCtx.state !== "running") await audioCtx.resume();
 
@@ -61,11 +63,10 @@ async function initAudio(){
   startLoop();
 }
 
-function degradeAudio(){
+function degradeAudio() {
   if (!audioCtx || !filter || !distortion || !percSource || !massSource) return;
   if (collapsing) return;
 
-  const prev = degradation;
   degradation = Math.min(1, degradation + 0.15);
 
   // Darken progressively
@@ -77,47 +78,15 @@ function degradeAudio(){
   percSource.playbackRate.setTargetAtTime(rate, audioCtx.currentTime, 0.05);
   massSource.playbackRate.setTargetAtTime(rate, audioCtx.currentTime, 0.05);
 
-  // Loudness compensation target for this degradation level
-  const target = getCompTarget(degradation);
+  // Distortion increases with degradation
+  const distAmount = degradation * 60;
+  distortion.curve = makeDistortion(distAmount);
 
-  // FIRST degradation only: pre-duck, then distort, then recover
-  if (!firstDegradeHit && prev === 0 && degradation > 0){
-    firstDegradeHit = true;
-
-    const t0 = audioCtx.currentTime;
-    const duckGain = Math.pow(10, (-FIRST_HIT_DUCK_DB) / 20);
-
-    masterGain.gain.cancelScheduledValues(t0);
-    masterGain.gain.setValueAtTime(masterGain.gain.value, t0);
-
-    // Fast dip (starts immediately)
-    masterGain.gain.linearRampToValueAtTime(
-      clamp(masterGain.gain.value * duckGain, 0.0001, 1),
-      t0 + (FIRST_HIT_DUCK_MS / 1000)
-    );
-
-    // Apply distortion only AFTER the duck is in place (prevents jump)
-    setTimeout(() => {
-      if (!distortion) return;
-      const distAmount = degradation * 45; // gentler on first hit
-      distortion.curve = makeDistortion(distAmount);
-    }, FIRST_HIT_DUCK_MS);
-
-    // Recover to compensated target
-    masterGain.gain.linearRampToValueAtTime(
-      target,
-      t0 + (FIRST_HIT_DUCK_MS + FIRST_HIT_RECOVER_MS) / 1000
-    );
-
-  } else {
-    // Normal distortion update + smooth compensation
-    const distAmount = degradation * 60;
-    distortion.curve = makeDistortion(distAmount);
-    applyLoudnessComp(degradation);
-  }
+  // Loudness compensation (no ducking, every hit)
+  applyLoudnessComp(degradation);
 }
 
-function collapseAudio(){
+function collapseAudio() {
   if (!audioCtx || !percSource || !massSource || !masterGain) return;
   if (collapsing) return;
   collapsing = true;
@@ -145,12 +114,12 @@ function collapseAudio(){
   }, 4500);
 }
 
-function ascendAudio(){
+function ascendAudio() {
   if (!audioCtx || !percBuffer || !massBuffer) return;
 
   collapsing = false;
 
-  // Brief fade down
+  // Brief fade down before jump (prevents click)
   const t0 = audioCtx.currentTime;
   masterGain.gain.cancelScheduledValues(t0);
   masterGain.gain.setValueAtTime(masterGain.gain.value, t0);
@@ -159,17 +128,39 @@ function ascendAudio(){
   setTimeout(() => {
     // RESET TO CLEAN before jump
     degradation = 0;
-    firstDegradeHit = false;
 
     if (distortion) distortion.curve = makeDistortion(0);
     if (filter) filter.frequency.setValueAtTime(8000, audioCtx.currentTime);
 
-    restartAt(ASCEND_JUMP_SEC, true);
+    // Restart at 1:57, non-looping, clean
+    restartAt(ASCEND_JUMP_SEC, { forceClean: true, loop: false });
+
+    const now = audioCtx.currentTime;
+
+    // Ascension boost: strong for ~5s, then gradually return
+    const baseTarget = getCompTarget(0);
+    const boostGain = Math.pow(10, ASCEND_BOOST_DB / 20);
+    const boosted = clamp(baseTarget * boostGain, 0.0001, 1.2);
+
+    masterGain.gain.cancelScheduledValues(now);
+    masterGain.gain.setValueAtTime(0.0001, now);
+
+    // Quick rise
+    masterGain.gain.linearRampToValueAtTime(boosted, now + 0.35);
+
+    // Hold
+    masterGain.gain.setValueAtTime(boosted, now + 0.35 + ASCEND_HOLD_SEC);
+
+    // Gradual return
+    masterGain.gain.linearRampToValueAtTime(
+      baseTarget,
+      now + 0.35 + ASCEND_HOLD_SEC + ASCEND_RETURN_SEC
+    );
   }, 189);
 }
 
 // ---- Core graph ----
-function buildGraph(){
+function buildGraph() {
   // Master -> filter -> distortion -> destination
   masterGain = audioCtx.createGain();
   masterGain.gain.value = BASE_MASTER;
@@ -188,12 +179,11 @@ function buildGraph(){
   distortion.connect(audioCtx.destination);
 }
 
-function startLoop(){
+function startLoop() {
   safeStop();
 
   degradation = 0;
   collapsing = false;
-  firstDegradeHit = false;
 
   filter.frequency.setValueAtTime(8000, audioCtx.currentTime);
   distortion.curve = makeDistortion(0);
@@ -231,8 +221,10 @@ function startLoop(){
   massSource.start(when);
 }
 
-function restartAt(offsetSec, forceClean = false){
+function restartAt(offsetSec, opts = {}) {
   if (!audioCtx || !percBuffer || !massBuffer) return;
+
+  const { forceClean = false, loop = true } = opts;
 
   safeStop();
 
@@ -242,8 +234,8 @@ function restartAt(offsetSec, forceClean = false){
   percSource.buffer = percBuffer;
   massSource.buffer = massBuffer;
 
-  percSource.loop = true;
-  massSource.loop = true;
+  percSource.loop = !!loop;
+  massSource.loop = !!loop;
 
   gainPerc = audioCtx.createGain();
   gainMass = audioCtx.createGain();
@@ -262,8 +254,8 @@ function restartAt(offsetSec, forceClean = false){
   massSource.playbackRate.value = 1.2;
 
   // Clamp offset to buffer duration
-  const offP = (offsetSec % percBuffer.duration + percBuffer.duration) % percBuffer.duration;
-  const offM = (offsetSec % massBuffer.duration + massBuffer.duration) % massBuffer.duration;
+  const offP = clampOffset(offsetSec, percBuffer.duration);
+  const offM = clampOffset(offsetSec, massBuffer.duration);
 
   const t0 = audioCtx.currentTime;
 
@@ -274,12 +266,30 @@ function restartAt(offsetSec, forceClean = false){
   const target = forceClean ? getCompTarget(0) : getCompTarget(degradation);
   masterGain.gain.linearRampToValueAtTime(target, t0 + 0.35);
 
+  // If non-looping, stop cleanly when both sources finish
+  if (!loop) {
+    attachStopOnEnded(percSource, massSource);
+  }
+
   const when = t0 + 0.03;
   percSource.start(when, offP);
   massSource.start(when, offM);
 }
 
-function safeStop(){
+function attachStopOnEnded(a, b) {
+  let ended = 0;
+  const done = () => {
+    ended += 1;
+    if (ended >= 2) {
+      safeStop();
+      setStatus("COMPLETE");
+    }
+  };
+  a.onended = done;
+  b.onended = done;
+}
+
+function safeStop() {
   try { percSource?.stop(); } catch {}
   try { massSource?.stop(); } catch {}
   percSource = null;
@@ -287,45 +297,56 @@ function safeStop(){
 }
 
 // ---- Loudness compensation ----
-function getCompTarget(d){
-  const trimDb = -DIST_COMP_DB * Math.pow(d, 0.9);
+function getCompTarget(d) {
+  // Stronger, steadier compensation so each degradation stays level.
+  // d is 0..1. This applies up to DIST_COMP_DB of trim by the curve.
+  const shaped = Math.pow(clamp(d, 0, 1), COMP_CURVE);
+  const trimDb = -DIST_COMP_DB * shaped;
   const trim = Math.pow(10, trimDb / 20);
+
   return clamp(BASE_MASTER * trim, MIN_MASTER, BASE_MASTER);
 }
 
-function applyLoudnessComp(d){
+function applyLoudnessComp(d) {
   const target = getCompTarget(d);
   const t0 = audioCtx.currentTime;
   masterGain.gain.cancelScheduledValues(t0);
-  masterGain.gain.setTargetAtTime(target, t0, 0.10);
+  // Short time constant so it follows each hit without “pumping”
+  masterGain.gain.setTargetAtTime(target, t0, 0.06);
 }
 
 // ---- Loading + DSP helpers ----
-async function loadBuffer(url){
+async function loadBuffer(url) {
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error(`Fetch failed ${res.status} for ${url}`);
   const arr = await res.arrayBuffer();
   return await audioCtx.decodeAudioData(arr);
 }
 
-function makeDistortion(amount){
+function makeDistortion(amount) {
   const k = amount;
   const n = 44100;
   const curve = new Float32Array(n);
-  for (let i = 0; i < n; i++){
+  for (let i = 0; i < n; i++) {
     const x = (i * 2 / n) - 1;
     curve[i] = ((3 + k) * x * 20 * Math.PI / 180) / (Math.PI + k * Math.abs(x));
   }
   return curve;
 }
 
-function clamp(x, a, b){
+function clamp(x, a, b) {
   return Math.max(a, Math.min(b, x));
 }
 
+function clampOffset(sec, dur) {
+  if (!isFinite(sec) || !isFinite(dur) || dur <= 0) return 0;
+  const m = ((sec % dur) + dur) % dur;
+  return m;
+}
+
 // --- Tiny UI sounds ---
-function playHitSound(){
-  if (!audioCtx) return;
+function playHitSound() {
+  if (!audioCtx || !masterGain) return;
 
   const t0 = audioCtx.currentTime;
 
@@ -352,8 +373,8 @@ function playHitSound(){
   osc.stop(t0 + 0.14);
 }
 
-function playSafeSound(){
-  if (!audioCtx) return;
+function playSafeSound() {
+  if (!audioCtx || !masterGain) return;
 
   const t0 = audioCtx.currentTime;
 
