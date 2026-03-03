@@ -16,6 +16,19 @@ body{
   font-family: monospace;
 }
 
+/* ========== STAGE (canvas + below text stays together on desktop) ========== */
+
+.stage{
+  height: 100%;
+  width: 100%;
+  display: grid;
+  grid-template-rows: auto auto;
+  justify-items: center;
+  align-content: start;
+  gap: 0;
+  padding-top: 52px; /* leaves room for the .ui at the top */
+}
+
 /* ========== CANVAS ========== */
 
 canvas{
@@ -37,6 +50,7 @@ canvas{
   font-size: 14px;
   letter-spacing: 1px;
   pointer-events: none;
+  z-index: 5;
 }
 
 #status{
@@ -55,12 +69,18 @@ canvas{
   width: 100%;
   text-align: center;
   pointer-events: auto;
+  padding: 8px 0 18px;
 }
 
 .hintSmall{
   margin-top: 12px;
   font-size: 11px;
   color: rgba(230,230,230,0.5);
+}
+
+/* used for the ascension link row */
+.hidden{
+  display: none;
 }
 
 /* Link styling for LA5 */
