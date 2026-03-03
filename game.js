@@ -170,7 +170,8 @@ function winGame() {
   hasWon = true;
 
   document.getElementById("status").textContent = "ASCENSION";
-
+const la5Row = document.getElementById("la5Row");
+if (la5Row) la5Row.classList.remove("hidden");
   if (typeof window.ascendAudio === "function") {
     window.ascendAudio();
   } else {
