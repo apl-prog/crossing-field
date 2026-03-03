@@ -1,7 +1,8 @@
 // game.js — Crossing Field
 // Win when player reaches the top band (row 0).
 // On integrity 0: trigger slow-down "collapse" audio + freeze input.
-// Obstacles: density ramps slowly by round, and lanes stagger direction + small per-lane speed variation.
+// Obstacles: density ramps slowly by round, lanes stagger direction + small per-lane speed variation.
+// ASCENSION: fade overlay + subtle pulsing title. (No "RECOVERY TEAM: LA5" text drawn on canvas)
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -19,6 +20,9 @@ let obstacles = [];
 let hasWon = false;
 let started = false;
 let isCollapsed = false;
+
+// for ascension animation timing
+let winTimeMs = 0;
 
 // Overlay start gate
 const overlay = document.getElementById("overlay");
@@ -111,7 +115,11 @@ function spawnObstacles(){
   // Speed ramps gently with rounds
   const BASE_SPEED = 0.024;
   const ROUND_SPEED_STEP = 0.010;
-  const baseSpeed = BASE_SPEED + (round - 1) * ROUND_SPEED_STEP;
+
+  // ~10% harder overall
+  const HARDNESS = 1.10;
+
+  const baseSpeed = (BASE_SPEED + (round - 1) * ROUND_SPEED_STEP) * HARDNESS;
 
   // Density ramps slowly: 1 per lane early, 2 later
   const OBSTACLES_PER_ROW = Math.min(2, 1 + Math.floor((round - 1) * 0.5));
@@ -119,15 +127,14 @@ function spawnObstacles(){
   // Lane rows. Keep some breathing room.
   for (let y = 2; y < 14; y += 2){
     // Stagger direction per lane
-    // even lane index -> right, odd -> left (based on y)
     const dir = ((y / 2) % 2 === 0) ? 1 : -1;
 
     // Slight per-lane speed variation so it feels less uniform
-    const laneVar = 0.85 + ((y % 6) * 0.05); // 0.85..1.10-ish
+    const laneVar = 0.88 + ((y % 6) * 0.04); // gentle range
     const laneSpeed = baseSpeed * laneVar;
 
     for (let i = 0; i < OBSTACLES_PER_ROW; i++){
-      // Spread spawn positions a bit so they don't stack on each other
+      // Spread spawn positions so they don't stack
       const spacing = Math.floor(GRID_W / OBSTACLES_PER_ROW);
       const jitter = Math.floor(Math.random() * Math.max(1, spacing));
       const x0 = (i * spacing + jitter) % GRID_W;
@@ -154,7 +161,6 @@ function triggerCollapse(){
 
   document.getElementById("status").textContent = "INTEGRITY FAILURE";
 
-  // slow drawn-out audio collapse
   if (typeof collapseAudio === "function") collapseAudio();
 
   setTimeout(() => {
@@ -180,6 +186,8 @@ function playerDeath(){
 
 function winGame(){
   hasWon = true;
+  winTimeMs = performance.now();
+
   document.getElementById("status").textContent = "ASCENSION";
 
   // reveal the link row after ascension
@@ -207,7 +215,6 @@ function update(){
 
   // WIN CONDITION: reach the discolored top row (row 0)
   if (player.y === 0){
-    // play "safe" sfx once per crossing
     if (safeSfxArmed && typeof playSafeSound === "function") {
       playSafeSound();
       safeSfxArmed = false;
@@ -248,26 +255,47 @@ function draw(){
   if (!hasWon){
     ctx.fillStyle = isCollapsed ? "#5a5a5a" : "#c7372c";
     ctx.fillRect(player.x * TILE, player.y * TILE, TILE, TILE);
-  } else {
-    // green hood + scepter (simple)
-    ctx.fillStyle = "#2fbf5a";
-    ctx.fillRect(player.x * TILE, player.y * TILE, TILE, TILE);
-    ctx.fillStyle = "#d8d8d8";
-    ctx.fillRect(player.x * TILE + TILE - 6, player.y * TILE + 6, 3, TILE - 12);
-
-    ctx.fillStyle = "#e6e6e6";
-    ctx.font = "16px monospace";
-    ctx.textAlign = "center";
-    ctx.fillText("ASCENDED", canvas.width / 2, canvas.height / 2);
-    ctx.font = "12px monospace";
-    
+    return;
   }
+
+  // ASCENSION visuals
+  const now = performance.now();
+  const t = Math.max(0, (now - winTimeMs) / 1000);
+
+  // Fade overlay in over ~1.2s
+  const fade = clamp01(t / 1.2);
+
+  ctx.fillStyle = `rgba(0,0,0,${0.62 * fade})`;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Green hood + scepter stays visible
+  ctx.fillStyle = "#2fbf5a";
+  ctx.fillRect(player.x * TILE, player.y * TILE, TILE, TILE);
+  ctx.fillStyle = "#d8d8d8";
+  ctx.fillRect(player.x * TILE + TILE - 6, player.y * TILE + 6, 3, TILE - 12);
+
+  // Subtle pulse on the title
+  const pulse = 1 + 0.03 * Math.sin((2 * Math.PI * t) / 1.6); // period ~1.6s
+
+  ctx.fillStyle = "rgba(230,230,230,0.95)";
+  ctx.textAlign = "center";
+
+  ctx.font = `${Math.round(16 * pulse)}px monospace`;
+  ctx.fillText("ASCENDED", canvas.width / 2, canvas.height / 2);
+
+  ctx.font = "12px monospace";
+  ctx.fillStyle = "rgba(230,230,230,0.70)";
+  ctx.fillText("ACCESS GRANTED", canvas.width / 2, canvas.height / 2 + 18);
 }
 
 function loop(){
   update();
   draw();
   requestAnimationFrame(loop);
+}
+
+function clamp01(x){
+  return Math.max(0, Math.min(1, x));
 }
 
 // Init
