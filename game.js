@@ -185,10 +185,12 @@ function playerDeath(){
 }
 
 function winGame(){
+  if (hasWon) return; // prevents re-triggering
   hasWon = true;
   winTimeMs = performance.now();
 
-  document.getElementById("status").textContent = "ASCENSION";
+  const status = document.getElementById("status");
+  if (status) status.textContent = "ASCENSION";
 
   // reveal the link row after ascension
   const la5Row = document.getElementById("la5Row");
