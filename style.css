@@ -49,6 +49,32 @@ canvas{
   opacity: 0.6;
 }
 
+/* ========== BELOW-GAME TEXT ROWS (clickable links allowed) ========== */
+
+.hintRow{
+  width: 100%;
+  text-align: center;
+  pointer-events: auto;
+}
+
+.hintSmall{
+  margin-top: 12px;
+  font-size: 11px;
+  color: rgba(230,230,230,0.5);
+}
+
+/* Link styling for LA5 */
+.la5{
+  color: rgba(255, 107, 61, 0.9);
+  text-decoration: none;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.la5:hover{
+  text-decoration: underline;
+}
+
 /* ========== START OVERLAY ========== */
 
 .overlay{
@@ -102,12 +128,6 @@ canvas{
 .startBtn:hover{
   background: rgba(255,255,255,0.14);
   border-color: rgba(255,255,255,0.25);
-}
-
-.hintSmall{
-  margin-top: 12px;
-  font-size: 11px;
-  color: rgba(230,230,230,0.5);
 }
 
 /* ========== OPTIONAL: subtle CRT vibe ========== */
