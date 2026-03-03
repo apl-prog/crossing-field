@@ -16,22 +16,26 @@
     </div>
   </div>
 
-  <canvas id="game" width="512" height="512"></canvas>
+  <!-- Stage keeps the canvas + below-text together on desktop -->
+  <div class="stage">
+    <canvas id="game" width="512" height="512"></canvas>
+
+    <div class="hintRow">
+      <div class="hintSmall">Direct the Recovery Operator to safety</div>
+      <div class="hintSmall">if you hear nothing, turn Silent Mode off (ringer on).</div>
+
+      <!-- Hidden until ASCENSION -->
+      <div class="hintSmall hidden" id="la5Row">
+        <a class="la5" href="https://liberandos.com" target="_blank" rel="noopener">
+          recovery team enter here
+        </a>
+      </div>
+    </div>
+  </div>
 
   <div class="ui">
     <div id="status">STANDBY</div>
     <div id="integrity">INTEGRITY: 100%</div>
-  </div>
-
-  <!-- NEW: instruction line below the game -->
-  <div class="hintSmall">Direct the Recovery Operator to safety</div>
-
-  <div class="hintSmall">if you hear nothing, turn Silent Mode off (ringer on).</div>
-
-  <!-- NEW: persistent link -->
-  <div class="hintSmall">
-    RECOVERY TEAM:
-    <a class="la5" href="https://liberandos.com" target="_blank" rel="noopener">LA5</a>
   </div>
 
   <script src="audio.js?v=1"></script>
