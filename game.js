@@ -1,8 +1,7 @@
 // game.js — Crossing Field
 // Win when player reaches the top band (row 0).
 // On integrity 0: trigger slow-down "collapse" audio + freeze input.
-// 3 crossings to win. Obstacles move faster each round.
-// Adds: tiny sounds on HIT and on SAFE (top-row reach).
+// Obstacles: density ramps slowly by round, and lanes stagger direction + small per-lane speed variation.
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -26,23 +25,26 @@ const overlay = document.getElementById("overlay");
 const startBtn = document.getElementById("startBtn");
 const overlayMsg = document.getElementById("overlayMsg");
 
+// For "made it safe" sound: only fire once per crossing when hitting row 0.
+let safeSfxArmed = true;
+
 startBtn.addEventListener("click", async () => {
   if (started) return;
 
-  try {
+  try{
     overlayMsg.textContent = "Loading audio...";
-    await window.initAudio();
+    await initAudio();
     started = true;
     overlay.classList.add("hidden");
     document.getElementById("status").textContent = "ROUND 1";
-  } catch (e) {
+  } catch(e){
     console.error(e);
     overlayMsg.textContent = String(e.message || e);
   }
 });
 
 // Movement helper
-function move(dx, dy) {
+function move(dx, dy){
   if (!started || hasWon || isCollapsed) return;
 
   player.x += dx;
@@ -53,8 +55,8 @@ function move(dx, dy) {
 }
 
 // Keyboard controls
-document.addEventListener("keydown", (e) => {
-  if (!started || isCollapsed) return;
+document.addEventListener("keydown", e => {
+  if (!started) return;
 
   if (e.key === "ArrowLeft") move(-1, 0);
   if (e.key === "ArrowRight") move(1, 0);
@@ -62,147 +64,163 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "ArrowDown") move(0, 1);
 });
 
-// Mobile swipe controls (prevents Safari scroll on drag)
+// Mobile swipe controls
 let touchStart = null;
 
-canvas.addEventListener(
-  "pointerdown",
-  (e) => {
-    if (!started || isCollapsed) return;
+canvas.addEventListener("pointerdown", e => {
+  if (!started) return;
+  if (isCollapsed) return;
 
-    e.preventDefault();
-    canvas.setPointerCapture?.(e.pointerId);
-    touchStart = { x: e.clientX, y: e.clientY };
-  },
-  { passive: false }
-);
+  e.preventDefault();
+  canvas.setPointerCapture?.(e.pointerId);
+  touchStart = { x: e.clientX, y: e.clientY };
+}, { passive: false });
 
-canvas.addEventListener(
-  "pointermove",
-  (e) => {
-    if (!started || isCollapsed) return;
-    e.preventDefault();
-  },
-  { passive: false }
-);
+canvas.addEventListener("pointermove", e => {
+  if (!started) return;
+  e.preventDefault();
+}, { passive: false });
 
-canvas.addEventListener(
-  "pointerup",
-  (e) => {
-    if (!started || !touchStart || isCollapsed) return;
+canvas.addEventListener("pointerup", e => {
+  if (!started || !touchStart) return;
+  if (isCollapsed) return;
 
-    e.preventDefault();
+  e.preventDefault();
 
-    const dx = e.clientX - touchStart.x;
-    const dy = e.clientY - touchStart.y;
+  const dx = e.clientX - touchStart.x;
+  const dy = e.clientY - touchStart.y;
 
-    const adx = Math.abs(dx);
-    const ady = Math.abs(dy);
-    const THRESH = 18;
+  const adx = Math.abs(dx);
+  const ady = Math.abs(dy);
+  const THRESH = 18;
 
-    if (adx < THRESH && ady < THRESH) {
-      touchStart = null;
-      return;
-    }
-
-    if (adx > ady) move(dx > 0 ? 1 : -1, 0);
-    else move(0, dy > 0 ? 1 : -1);
-
+  if (adx < THRESH && ady < THRESH) {
     touchStart = null;
-  },
-  { passive: false }
-);
+    return;
+  }
 
-function spawnObstacles() {
+  if (adx > ady) move(dx > 0 ? 1 : -1, 0);
+  else move(0, dy > 0 ? 1 : -1);
+
+  touchStart = null;
+}, { passive: false });
+
+function spawnObstacles(){
   obstacles = [];
 
-  const BASE_SPEED = 0.025; // starting speed
-  const ROUND_SPEED_STEP = 0.015; // speed increase per round
-  const speed = BASE_SPEED + (round - 1) * ROUND_SPEED_STEP;
+  // Speed ramps gently with rounds
+  const BASE_SPEED = 0.024;
+  const ROUND_SPEED_STEP = 0.010;
+  const baseSpeed = BASE_SPEED + (round - 1) * ROUND_SPEED_STEP;
 
-  for (let y = 2; y < 14; y += 2) {
-    obstacles.push({
-      x: Math.floor(Math.random() * GRID_W),
-      y,
-      speed,
-    });
+  // Density ramps slowly: 1 per lane early, 2 later
+  const OBSTACLES_PER_ROW = Math.min(2, 1 + Math.floor((round - 1) * 0.5));
+
+  // Lane rows. Keep some breathing room.
+  for (let y = 2; y < 14; y += 2){
+    // Stagger direction per lane
+    // even lane index -> right, odd -> left (based on y)
+    const dir = ((y / 2) % 2 === 0) ? 1 : -1;
+
+    // Slight per-lane speed variation so it feels less uniform
+    const laneVar = 0.85 + ((y % 6) * 0.05); // 0.85..1.10-ish
+    const laneSpeed = baseSpeed * laneVar;
+
+    for (let i = 0; i < OBSTACLES_PER_ROW; i++){
+      // Spread spawn positions a bit so they don't stack on each other
+      const spacing = Math.floor(GRID_W / OBSTACLES_PER_ROW);
+      const jitter = Math.floor(Math.random() * Math.max(1, spacing));
+      const x0 = (i * spacing + jitter) % GRID_W;
+
+      obstacles.push({
+        x: x0,
+        y,
+        speed: laneSpeed,
+        dir
+      });
+    }
   }
 }
 
-function updateIntegrityUI() {
-  const integrity = Math.max(0, 100 - deaths * 33);
-  document.getElementById("integrity").textContent =
-    "INTEGRITY: " + integrity + "%";
+function updateIntegrityUI(){
+  const integrity = Math.max(0, 100 - deaths * 15);
+  document.getElementById("integrity").textContent = "INTEGRITY: " + integrity + "%";
   return integrity;
 }
 
-function triggerCollapse() {
+function triggerCollapse(){
   if (isCollapsed) return;
   isCollapsed = true;
 
   document.getElementById("status").textContent = "INTEGRITY FAILURE";
 
-  if (typeof window.collapseAudio === "function") window.collapseAudio();
+  // slow drawn-out audio collapse
+  if (typeof collapseAudio === "function") collapseAudio();
 
   setTimeout(() => {
     if (!hasWon) document.getElementById("status").textContent = "RECOVERY FAILED";
   }, 4200);
 }
 
-function playerDeath() {
+function playerDeath(){
   deaths++;
 
-  if (typeof window.degradeAudio === "function") window.degradeAudio();
-  if (typeof window.playHitSound === "function") window.playHitSound();
+  if (typeof playHitSound === "function") playHitSound();
+  if (typeof degradeAudio === "function") degradeAudio();
 
   const integrity = updateIntegrityUI();
 
   // Reset position
   player = { x: 8, y: 15 };
 
-  if (integrity <= 0) {
+  if (integrity <= 0){
     triggerCollapse();
   }
 }
 
-function winGame() {
-  if (hasWon) return;
+function winGame(){
   hasWon = true;
-
   document.getElementById("status").textContent = "ASCENSION";
-const la5Row = document.getElementById("la5Row");
-if (la5Row) la5Row.classList.remove("hidden");
-  if (typeof window.ascendAudio === "function") {
-    window.ascendAudio();
-  } else {
-    console.warn("ascendAudio undefined");
-  }
+
+  // reveal the link row after ascension
+  const la5Row = document.getElementById("la5Row");
+  if (la5Row) la5Row.classList.remove("hidden");
+
+  if (typeof ascendAudio === "function") ascendAudio();
 }
 
-function update() {
+function update(){
   if (!started || hasWon || isCollapsed) return;
 
-  // Move obstacles
-  obstacles.forEach((o) => {
-    o.x += o.speed;
-    if (o.x > GRID_W) o.x = 0;
+  // Move obstacles and check collision
+  obstacles.forEach(o => {
+    o.x += o.speed * o.dir;
 
-    if (Math.floor(o.x) === player.x && o.y === player.y) {
+    // wrap
+    if (o.x >= GRID_W) o.x -= GRID_W;
+    if (o.x < 0) o.x += GRID_W;
+
+    if (Math.floor(o.x) === player.x && o.y === player.y){
       playerDeath();
     }
   });
 
-  // Win condition: reach the top band (row 0)
-  if (player.y === 0) {
+  // WIN CONDITION: reach the discolored top row (row 0)
+  if (player.y === 0){
+    // play "safe" sfx once per crossing
+    if (safeSfxArmed && typeof playSafeSound === "function") {
+      playSafeSound();
+      safeSfxArmed = false;
+    }
+
     crossings++;
     round++;
 
-    if (typeof window.playSafeSound === "function") window.playSafeSound();
-
     // reset position for next crossing
     player = { x: 8, y: 15 };
+    safeSfxArmed = true;
 
-    if (crossings >= 3) {
+    if (crossings >= 3){
       winGame();
       return;
     }
@@ -212,7 +230,7 @@ function update() {
   }
 }
 
-function draw() {
+function draw(){
   ctx.fillStyle = "#120a08";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -222,19 +240,18 @@ function draw() {
 
   // obstacles
   ctx.fillStyle = "#d07a2a";
-  obstacles.forEach((o) => {
+  obstacles.forEach(o => {
     ctx.fillRect(Math.floor(o.x) * TILE, o.y * TILE, TILE, TILE);
   });
 
   // player
-  if (!hasWon) {
+  if (!hasWon){
     ctx.fillStyle = isCollapsed ? "#5a5a5a" : "#c7372c";
     ctx.fillRect(player.x * TILE, player.y * TILE, TILE, TILE);
   } else {
-    // green hood + scepter
+    // green hood + scepter (simple)
     ctx.fillStyle = "#2fbf5a";
     ctx.fillRect(player.x * TILE, player.y * TILE, TILE, TILE);
-
     ctx.fillStyle = "#d8d8d8";
     ctx.fillRect(player.x * TILE + TILE - 6, player.y * TILE + 6, 3, TILE - 12);
 
@@ -247,12 +264,13 @@ function draw() {
   }
 }
 
-function loop() {
+function loop(){
   update();
   draw();
   requestAnimationFrame(loop);
 }
 
+// Init
 spawnObstacles();
 updateIntegrityUI();
 loop();
