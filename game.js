@@ -260,7 +260,7 @@ function draw(){
     ctx.textAlign = "center";
     ctx.fillText("ASCENDED", canvas.width / 2, canvas.height / 2);
     ctx.font = "12px monospace";
-    ctx.fillText("RECOVERY TEAM: LA5", canvas.width / 2, canvas.height / 2 + 18);
+    
   }
 }
 
